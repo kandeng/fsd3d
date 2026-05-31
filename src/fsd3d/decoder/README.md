@@ -2,6 +2,10 @@
 
 The **decoder** sub-package implements §3 (Latent & Flight Generation) and §4 (Action Loop) of the FSD3D architecture. It contains the core model, training loops, inference routines, data assembly, and visualization — everything needed to train and evaluate the CFM vs AR comparison self-contained within this directory.
 
+![FSD3D Architecture](../../../image/fsd3d_overall_architecture_02.png)
+
+*Figure: §3 (Latent & Flight Generation) and §4 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2, and Q from z_tau via action projection. It outputs a clean flight plan z₁, which the Action Head projects to a 16×4 trajectory horizon matrix.*
+
 The expert trajectories are **bimodal Y-shaped paths**: the drone flies straight up a corridor, then dodges either left or right around a circular pillar, and continues straight up. With multimodal training data, the AR model averages both modes (x≈0) and flies straight into the pillar (collision), while the CFM model resolves a single clean trajectory that correctly dodges around the pillar.
 
 ---

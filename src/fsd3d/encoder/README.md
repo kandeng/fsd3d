@@ -8,16 +8,9 @@ This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter) a
 
 ## 1. Goal and System Role
 
-![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture.png)
+![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video. §2 (Conditioning) fuses telemetry and A* guidance. Together they form the context memory bank (K, V) for §3's cross-attention. §4 (Action Loop) projects the decoder output to control commands.*
-
-**Remarks on details not visible in the diagram:**
-
-- **DomainAdapter** sits between the ViT encoder output and the K, V context — it compensates for domain shift (e.g. 3DGS-rendered pixels vs. real camera pixels). Each data source provides its own adapter implementation.
-- **Source ID embedding** is added to all tokens after concatenation in §2 — a learned vector that distinguishes data sources during multi-domain training.
-- **Q does not come from §1 or §2** — the Query (Q) fed into §3's cross-attention originates from `z_tau`, the current state of the generative process (noise canvas in CFM, partial sequence in AR). The decoder maps `z_tau` via `action_projection` into Q tokens, while §1+§2 context serves as K, V.
-- **Context is truncated/padded** to a fixed `CONTEXT_TOKENS = 32` length — the concatenation of visual tokens (196 from ViT) + telemetry token (1) + path tokens (N) is projected and then truncated or zero-padded to 32 tokens.
+*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and A* guidance with source ID embedding. §3 (Context Normalization) merges and normalizes §1 + §2 outputs to exactly 32 tokens as K, V, while Q originates from z_tau via action projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
 
 ### §1 Encoder — Pilot Space
 
