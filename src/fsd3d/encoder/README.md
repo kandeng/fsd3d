@@ -10,7 +10,7 @@ This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter) a
 
 ![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and A* guidance with source ID embedding. §3 (Context Normalization) merges and normalizes §1 + §2 outputs to exactly 32 tokens as K, V, while Q originates from z_tau via action projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
+*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance with source ID embedding. §3 (Context Normalization) merges and normalizes §1 + §2 outputs to exactly 32 tokens as K, V, while Q originates from z_tau via action projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
 
 ### §1 Encoder — Pilot Space
 
