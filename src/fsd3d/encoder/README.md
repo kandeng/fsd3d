@@ -248,7 +248,7 @@ train_cfm(context, plans, num_epochs=5000, lr=1e-4, device="cuda")
 examples/fsd3d-3dgs/
 ├── pyproject.toml                          # Package config (depends on fsd3d)
 ├── asset/
-│   └── egglestone_abbey.ply                # 3DGS scene (142MB, not in git)
+│   └── egglestone_abbey.ply                # 3DGS scene (142MB, download from https://superspl.at/scene/67ba224d)
 ├── src/fsd3d_3dgs/
 │   ├── scene/
 │   │   ├── loader.py                       # PLY → gsplat tensors
@@ -303,8 +303,8 @@ pip install -e .    # pulls in gsplat (CUDA), plyfile, scipy, opencv-python
 python -c "import torch; assert torch.cuda.is_available(); print('CUDA OK')"
 python -c "import gsplat; print('gsplat OK')"
 
-# 3. Copy the PLY asset (too large for git, ~142MB)
-cp /path/to/egglestone_abbey.ply asset/
+# 3. Download the 3DGS scene asset (~142MB, too large for git)
+wget -O asset/egglestone_abbey.ply https://superspl.at/scene/67ba224d
 ```
 
 ### 5.3 Generate video footage along A* path

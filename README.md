@@ -32,10 +32,11 @@ fsd3d/
         ├── __init__.py             # Public API exports
         ├── constants.py            # Shared constants (HORIZON, D_MODEL, etc.)
         ├── encoder/                # §1 — Pilot Space
-        │   ├── vit_encoder.py      #   ViT encoder (stub)
-        │   └── domain_adapter.py   #   Source-specific adaptation (stub)
+        │   ├── vit_encoder.py      #   ViT encoder: (B,12,224,224) → (B,196,128) visual tokens
+        │   ├── domain_adapter.py   #   DomainAdapter base + LinearDomainAdapter
+        │   └── README.md           #   §1 + §2 documentation, usage, GPU instructions
         ├── conditioner/            # §2 — Conditioning
-        │   └── conditioner.py      #   Telemetry + A* conditioner (stub)
+        │   └── conditioner.py      #   TelemetryEncoder (MLP) + PathEncoder (1-layer transformer) + Conditioner
         ├── decoder/                # §3 + §4 — Latent Generation + Action Loop
         │   ├── transformer.py      #   §3 FSD3DTransformerDecoder
         │   ├── action_head.py      #   §4 ActionHead
@@ -67,8 +68,8 @@ fsd3d/
 
 | Architecture Section | Package | Status |
 |---|---|---|
-| §1 Pilot Space | `fsd3d.encoder` | Stub — to be implemented |
-| §2 Conditioning | `fsd3d.conditioner` | Stub — to be implemented |
+| §1 Pilot Space | `fsd3d.encoder` | **Implemented** — ViTEncoder + DomainAdapter |
+| §2 Conditioning | `fsd3d.conditioner` | **Implemented** — TelemetryEncoder + PathEncoder + Conditioner |
 | §3 Latent & Flight Generation | `fsd3d.decoder.transformer` | **Implemented** |
 | §4 Action Loop | `fsd3d.decoder.action_head` + `fsd3d.decoder.autoregressive` | **Implemented** |
 
@@ -114,9 +115,14 @@ pip install -e ".[dev]"
 
 ## Usage
 
-*To be documented once §1 and §2 are implemented, enabling end-to-end inference from real sensor data.*
+The decoder (§3 + §4) can be exercised via entry-point scripts in `src/fsd3d/decoder/` — see [decoder/README.md](src/fsd3d/decoder/README.md).
 
-For now, the decoder can be exercised via the entry-point scripts in `src/fsd3d/decoder/` — see [decoder/README.md](src/fsd3d/decoder/README.md).
+For the full pipeline (§1 encoder → §2 conditioner → §3 decoder → §4 action head), see [encoder/README.md](src/fsd3d/encoder/README.md) which documents:
+- Architecture and data flow for §1 and §2
+- File-to-component mapping with the overall architecture diagram
+- Installation and standalone usage of ViTEncoder, DomainAdapter, and Conditioner
+- Complete usage example with `fsd3d-3dgs` (3DGS rendering, A* planning, telemetry simulation)
+- GPU server instructions for rendering, training, and integration tests
 
 ### CFM vs. Diffusion Visualization
 
@@ -132,6 +138,18 @@ MANEUVER=0 python cfm_diffusion.py
 MANEUVER=1 python cfm_diffusion.py
 ```
 
+## Assets
+
+The 3DGS scene file `egglestone_abbey.ply` (~142MB) is not tracked by git due to GitHub's file size limit. Download it from [SuperSplat](https://superspl.at/scene/67ba224d):
+
+```bash
+# Place in the project root asset/ directory
+wget -O asset/egglestone_abbey.ply https://superspl.at/scene/67ba224d
+
+# Or for the fsd3d-3dgs example (it's a symlink to the above)
+ls -la examples/fsd3d-3dgs/asset/egglestone_abbey.ply
+```
+
 ## Testing
 
 Each sub-module that contains tests has its own `README.md` with self-testing instructions.
@@ -139,6 +157,8 @@ Each sub-module that contains tests has its own `README.md` with self-testing in
 | Sub-module | Tests | README |
 |---|---|---|
 | `decoder/` (§3 + §4) | 52 tests — architecture correctness, data profile, CFM & AR pipelines | [decoder/README.md](src/fsd3d/decoder/README.md) |
+| `encoder/` + `conditioner/` (§1 + §2) | 14 unit tests + 4 GPU integration tests | [encoder/README.md](src/fsd3d/encoder/README.md) |
+| `examples/fsd3d-3dgs/` | 14 unit + 4 PLY integration tests | [test_integration.py](examples/fsd3d-3dgs/tests/test_integration.py) |
 
 Run all tests from the project root:
 
