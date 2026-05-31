@@ -16,6 +16,7 @@ env/
 # IDE
 .idea/
 .vscode/
+.qoder/
 *.swp
 *.swo
 *~
@@ -33,6 +34,7 @@ comparison_result.png
 
 # Large point-cloud assets (>100 MB, exceed GitHub limit)
 asset/egglestone_abbey.ply
+examples/fsd3d-3dgs/asset/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -45,3 +47,7 @@ asset/egglestone_abbey.ply
 
 # Egg info (editable install build artifacts)
 src/*.egg-info/
+
+# Example project build artifacts
+examples/fsd3d-3dgs/workspace/
+examples/fsd3d-3dgs/src/*.egg-info/
