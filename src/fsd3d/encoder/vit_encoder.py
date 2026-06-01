@@ -5,8 +5,8 @@ serving as (K, V) context for the §4 decoder's cross-attention.
 
 The encoder is source-agnostic — it processes (B, C*N_stack, H, W) image
 tensors regardless of whether the pixels came from 3DGS, Google Earth,
-or a real camera.  Domain-specific adaptation is handled by a separate
-DomainAdapter module.
+or a real camera.  Domain-specific adaptation is handled by the
+VisualAdapter module in ``fsd3d.data_bridge``.
 
 Architecture (mirrors the decoder but simpler — self-attention only):
   - Patch embedding (ViT-style Conv2d)
