@@ -1,6 +1,6 @@
 """CFM training — Conditional Flow Matching with interpolation.
 
-Trains §3 decoder + §4 ActionHead jointly via random τ interpolation.
+Trains §4 decoder + §5 ActionHead jointly via random τ interpolation.
 """
 
 import torch
@@ -21,8 +21,8 @@ def train_cfm(
     """Train the decoder + ActionHead with the Conditional Flow Matching objective.
 
     Args:
-        decoder:     FSD3DTransformerDecoder instance (§3)
-        action_head: ActionHead instance (§4)
+        decoder:     FSD3DTransformerDecoder instance (§4)
+        action_head: ActionHead instance (§5)
         z1:          (N, 16, 2) target plans (N ≥ 1 expert trajectories)
         context:     (1, 32, 128) context tensor
         epochs:      number of training epochs

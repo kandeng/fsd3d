@@ -1,8 +1,8 @@
 """Context assembly and trajectory utilities.
 
 Assembles the context tensor [B, 32, 128] from §1 (encoder) + §2 (conditioner)
-outputs.  When no real encoder/conditioner is available, falls back to a
-static Xavier-initialized context (via MockPlugin).
++ §3 (normalizer) outputs.  When no real encoder/conditioner is available,
+falls back to a static Xavier-initialized context (via MockPlugin).
 
 Also contains shared constants and trajectory denormalization helpers.
 """

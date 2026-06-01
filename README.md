@@ -6,16 +6,17 @@ A modular Python package implementing the FSD3D architecture for trajectory gene
 
 ![Overall Architecture](image/fsd3d_overall_architecture_02.png)
 
-The FSD3D pipeline processes raw video and telemetry into actionable flight trajectories through four stages:
+The FSD3D pipeline processes raw video and telemetry into actionable flight trajectories through five stages:
 
 | Section | Role | Input | Output |
 |---|---|---|---|
 | **§1 Pilot Space** | Encode visual perception | Raw 2D video | 3D spatial latent tokens |
-| **§2 Conditioning** | Fuse guidance signals | Telemetry + A* waypoints | Concatenated conditioning vector |
-| **§3 Latent & Flight Generation** | Generate a clean flight plan | Noise z₀ + context (K, V) | Latent features via CFM ODE or AR roll-out |
-| **§4 Action Loop** | Project to control commands | Latent features from §3 | Trajectory horizon matrix (action-space positions) |
+| **§2 Conditioning** | Fuse guidance signals | Telemetry + A* waypoints | Conditioning tokens (telemetry + path) |
+| **§3 Context Normalization** | Merge and normalize to fixed length | §1 visual + §2 conditioning tokens | Context (K, V) — (B, 32, 128) |
+| **§4 Latent & Flight Generation** | Generate a clean flight plan | Noise z₀ + context (K, V) | Latent features via CFM ODE or AR roll-out |
+| **§5 Action Loop** | Project to control commands | Latent features from §4 | Trajectory horizon matrix (action-space positions) |
 
-§1 and §2 produce the **context** (key–value memory bank). §3 and §4 form the **decoder** — the trainable core. At inference, CFM resolves the whole trajectory at once via an ODE vector field, while AR predicts step-by-step and is susceptible to compounding drift.
+§1 and §2 produce visual and conditioning tokens. §3 merges and normalizes them into the **context** (key–value memory bank). §4 and §5 form the **decoder** — the trainable core. At inference, CFM resolves the whole trajectory at once via an ODE vector field, while AR predicts step-by-step and is susceptible to compounding drift.
 
 ## File Structure
 
@@ -35,11 +36,15 @@ fsd3d/
         │   ├── vit_encoder.py      #   ViT encoder: (B,12,224,224) → (B,196,128) visual tokens
         │   ├── domain_adapter.py   #   DomainAdapter base + LinearDomainAdapter
         │   └── README.md           #   §1 + §2 documentation, usage, GPU instructions
-        ├── conditioner/            # §2 — Conditioning
-        │   └── conditioner.py      #   TelemetryEncoder (MLP) + PathEncoder (1-layer transformer) + Conditioner
-        ├── decoder/                # §3 + §4 — Latent Generation + Action Loop
-        │   ├── transformer.py      #   §3 FSD3DTransformerDecoder
-        │   ├── action_head.py      #   §4 ActionHead
+        ├── conditioner/            # §2 — Conditioning + §3 — Context Normalization
+        │   ├── telemetry_encoder.py  #   §2 TelemetryEncoder (MLP: 9 → 128)
+        │   ├── path_encoder.py       #   §2 PathEncoder (1-layer transformer)
+        │   ├── conditioner.py        #   §2 Conditioner (telemetry + path → conditioning tokens)
+        │   └── normalizer.py         #   §3 ContextNormalizer (merge + normalize to 32 tokens)
+        ├── decoder/                # §4 + §5 — Latent Generation + Action Loop
+        │   ├── transformer.py      #   §4 FSD3DTransformerDecoder
+        │   ├── action_projection.py #   §5 ActionProjection (z_tau → Q)
+        │   ├── action_head.py      #   §5 ActionHead
         │   ├── autoregressive.py   #   AutoregressiveWrapper (causal mask, start token)
         │   ├── context.py          #   ContextAssembler, trajectory utilities
         │   ├── main.py             #   Train both paradigms → save checkpoints
@@ -70,17 +75,19 @@ fsd3d/
 |---|---|---|
 | §1 Pilot Space | `fsd3d.encoder` | **Implemented** — ViTEncoder + DomainAdapter |
 | §2 Conditioning | `fsd3d.conditioner` | **Implemented** — TelemetryEncoder + PathEncoder + Conditioner |
-| §3 Latent & Flight Generation | `fsd3d.decoder.transformer` | **Implemented** |
-| §4 Action Loop | `fsd3d.decoder.action_head` + `fsd3d.decoder.autoregressive` | **Implemented** |
+| §3 Context Normalization | `fsd3d.conditioner.normalizer` | **Implemented** — ContextNormalizer |
+| §4 Latent & Flight Generation | `fsd3d.decoder.transformer` | **Implemented** |
+| §5 Action Loop | `fsd3d.decoder.action_projection` + `fsd3d.decoder.action_head` + `fsd3d.decoder.autoregressive` | **Implemented** |
 
 ### Sub-package Descriptions
 
-#### `decoder/` — §3 + §4: Model Definitions & Entry Points
+#### `decoder/` — §4 + §5: Model Definitions & Entry Points
 
 The decoder is the trainable core of the FSD3D pipeline. It contains the model definitions and the scripts to train, visualize, and test them.
 
-- **`transformer.py`** — `FSD3DTransformerDecoder` (§3): a cross-attention decoder that takes noise z₀ (query) and context (key–value), conditioned on a continuous flow time τ, and outputs latent features.
-- **`action_head.py`** — `ActionHead` (§4): a zero-init linear head that projects latent features to velocity vectors (CFM) or position predictions (AR). Zero-initialization ensures the model starts as an identity map.
+- **`transformer.py`** — `FSD3DTransformerDecoder` (§4): a cross-attention decoder that takes noise z₀ (query, via §5 ActionProjection) and context (key–value from §3), conditioned on a continuous flow time τ, and outputs latent features.
+- **`action_projection.py`** — `ActionProjection` (§5): projects z_tau (current generative state) into d_model space, producing the Query (Q) for the §4 decoder's cross-attention.
+- **`action_head.py`** — `ActionHead` (§5): a zero-init linear head that projects latent features to velocity vectors (CFM) or position predictions (AR). Zero-initialization ensures the model starts as an identity map.
 - **`autoregressive.py`** — `AutoregressiveWrapper`: wraps the decoder with a causal mask and a learned start token. In training, it uses teacher forcing (full ground-truth input). At inference, it generates step-by-step via `generate()`.
 - **`context.py`** — `ContextAssembler`: builds the (1, 32, 128) context tensor from a `DataSourcePlugin`. Also provides `compute_spatial_trajectory()` and `denormalize_trajectory()` for visualization.
 - **`main.py`**, **`visualize.py`**, **`visualize_training.py`**, **`generate_diagram.py`** — entry-point scripts for training and visualization.
@@ -115,12 +122,12 @@ pip install -e ".[dev]"
 
 ## Usage
 
-The decoder (§3 + §4) can be exercised via entry-point scripts in `src/fsd3d/decoder/` — see [decoder/README.md](src/fsd3d/decoder/README.md).
+The decoder (§4 + §5) can be exercised via entry-point scripts in `src/fsd3d/decoder/` — see [decoder/README.md](src/fsd3d/decoder/README.md).
 
-For the full pipeline (§1 encoder → §2 conditioner → §3 decoder → §4 action head), see [encoder/README.md](src/fsd3d/encoder/README.md) which documents:
-- Architecture and data flow for §1 and §2
+For the full pipeline (§1 encoder → §2 conditioner → §3 normalizer → §4 decoder → §5 action head), see [encoder/README.md](src/fsd3d/encoder/README.md) which documents:
+- Architecture and data flow for §1, §2, and §3
 - File-to-component mapping with the overall architecture diagram
-- Installation and standalone usage of ViTEncoder, DomainAdapter, and Conditioner
+- Installation and standalone usage of ViTEncoder, DomainAdapter, Conditioner, and ContextNormalizer
 - Complete usage example with `fsd3d-3dgs` (3DGS rendering, A* planning, telemetry simulation)
 - GPU server instructions for rendering, training, and integration tests
 
@@ -156,9 +163,9 @@ Each sub-module that contains tests has its own `README.md` with self-testing in
 
 | Sub-module | Tests | README |
 |---|---|---|
-| `decoder/` (§3 + §4) | 52 tests — architecture correctness, data profile, CFM & AR pipelines | [decoder/README.md](src/fsd3d/decoder/README.md) |
-| `encoder/` + `conditioner/` (§1 + §2) | 14 unit tests + 4 GPU integration tests | [encoder/README.md](src/fsd3d/encoder/README.md) |
-| `examples/fsd3d-3dgs/` | 14 unit + 4 PLY integration tests | [test_integration.py](examples/fsd3d-3dgs/tests/test_integration.py) |
+| `decoder/` (§4 + §5) | 52 tests — architecture correctness, data profile, CFM & AR pipelines | [decoder/README.md](src/fsd3d/decoder/README.md) |
+| `encoder/` + `conditioner/` (§1 + §2 + §3) | 19 unit tests + 4 GPU integration tests | [encoder/README.md](src/fsd3d/encoder/README.md) |
+| `examples/fsd3d-3dgs/` | 19 unit + 4 PLY integration tests | [test_integration.py](examples/fsd3d-3dgs/tests/test_integration.py) |
 
 Run all tests from the project root:
 

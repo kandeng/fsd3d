@@ -1,6 +1,6 @@
 """AR training — Autoregressive MSE with teacher forcing.
 
-Trains the AutoregressiveWrapper (§3 + §4 + start token) via
+Trains the AutoregressiveWrapper (§4 + §5 + start token) via
 teacher forcing with position-MSE loss.
 """
 

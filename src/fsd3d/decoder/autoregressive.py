@@ -1,6 +1,6 @@
 """Autoregressive Wrapper — manages AR concerns outside the decoder.
 
-Contains both the §3 decoder and the §4 ActionHead.  Adds a learned
+Contains both the §4 decoder and the §5 ActionHead.  Adds a learned
 start token, causal mask generation, teacher-forcing input preparation,
 and step-by-step autoregressive generation.
 """
@@ -15,7 +15,7 @@ from fsd3d.decoder.action_head import ActionHead
 class AutoregressiveWrapper(nn.Module):
     """Thin wrapper managing autoregressive concerns *outside* the decoder.
 
-    Contains both the §3 decoder and the §4 ActionHead.  Adds a learned
+    Contains both the §4 decoder and the §5 ActionHead.  Adds a learned
     start token, causal mask generation, teacher-forcing input preparation,
     and step-by-step autoregressive generation.
     """

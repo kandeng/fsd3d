@@ -1,10 +1,10 @@
-# FSD3D Decoder (§3 + §4) — CFM vs Autoregressive Comparison
+# FSD3D Decoder (§4 + §5) — CFM vs Autoregressive Comparison
 
-The **decoder** sub-package implements §3 (Latent & Flight Generation) and §4 (Action Loop) of the FSD3D architecture. It contains the core model, training loops, inference routines, data assembly, and visualization — everything needed to train and evaluate the CFM vs AR comparison self-contained within this directory.
+The **decoder** sub-package implements §4 (Latent & Flight Generation) and §5 (Action Loop) of the FSD3D architecture. It contains the core model, training loops, inference routines, data assembly, and visualization — everything needed to train and evaluate the CFM vs AR comparison self-contained within this directory.
 
 ![FSD3D Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: §3 (Latent & Flight Generation) and §4 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2, and Q from z_tau via action projection. It outputs a clean flight plan z₁, which the Action Head projects to a 16×4 trajectory horizon matrix.*
+*Figure: §4 (Latent & Flight Generation) and §5 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2 + §3, and Q from z_tau via §5 Action Projection. It outputs a clean flight plan z₁, which the §5 Action Head projects to a 16×4 trajectory horizon matrix.*
 
 The expert trajectories are **bimodal Y-shaped paths**: the drone flies straight up a corridor, then dodges either left or right around a circular pillar, and continues straight up. With multimodal training data, the AR model averages both modes (x≈0) and flies straight into the pillar (collision), while the CFM model resolves a single clean trajectory that correctly dodges around the pillar.
 
@@ -78,9 +78,9 @@ This trains both models (CFM: 5000 epochs, AR: 300 epochs) and saves everything 
 
 | Output file | Contents |
 |---|---|
-| `workspace/cfm_decoder.pt` | CFM decoder state dict (§3) |
-| `workspace/cfm_action_head.pt` | CFM ActionHead state dict (§4) |
-| `workspace/ar_wrapper.pt` | AR wrapper state dict (§3 + §4 + start token) |
+| `workspace/cfm_decoder.pt` | CFM decoder state dict (§4) |
+| `workspace/cfm_action_head.pt` | CFM ActionHead state dict (§5) |
+| `workspace/ar_wrapper.pt` | AR wrapper state dict (§4 + §5 + start token) |
 | `workspace/z1.pt` | Target plan tensor (2, 16, 2) |
 | `workspace/context.pt` | Context tensor (1, 32, 128) |
 | `workspace/training_log.txt` | Full training log |
@@ -176,8 +176,9 @@ src/fsd3d/decoder/
 ├── visualize.py           # Interactive side-by-side animation
 ├── visualize_training.py  # Training progression figure
 ├── generate_diagram.py    # Generate static README illustration
-├── transformer.py         # §3 FSD3DTransformerDecoder
-├── action_head.py         # §4 ActionHead
+├── transformer.py         # §4 FSD3DTransformerDecoder
+├── action_projection.py  # §5 ActionProjection (z_tau → Q)
+├── action_head.py         # §5 ActionHead
 ├── autoregressive.py      # AutoregressiveWrapper (causal mask + start token)
 ├── context.py             # ContextAssembler, constants, trajectory utilities
 ├── tests/
@@ -193,14 +194,14 @@ src/fsd3d/decoder/
 
 ## Architecture
 
-Both paradigms use the **exact same** `FSD3DTransformerDecoder` (§3) + `ActionHead` (§4):
+Both paradigms use the **exact same** `FSD3DTransformerDecoder` (§4) + `ActionHead` (§5):
 
 ```
-§3 — FSD3DTransformerDecoder (Latent & Flight Generation)
+§4 — FSD3DTransformerDecoder (Latent & Flight Generation)
 ───────────────────────────────────────────────────────────
 Input: z_τ [B, 16, 2]  +  τ [B, 1]  +  context [B, 32, 128]
   │
-  ├─ action_projection: Linear(2 → 128)
+  ├─ action_projection: §5 ActionProjection (2 → 128)  — maps z_tau → Q
   ├─ position_embedding:  (1, 32, 128)  learned
   ├─ time_embedding:      Linear(1 → 128)
   │
@@ -213,9 +214,9 @@ Input: z_τ [B, 16, 2]  +  τ [B, 1]  +  context [B, 32, 128]
   ▼
 Output: [B, 16, 128]  latent features
 
-§4 — ActionHead (Action Loop)
+§5 — ActionHead (Action Loop)
 ───────────────────────────────
-Input: [B, 16, 128]  latent features from §3
+Input: [B, 16, 128]  latent features from §4
   │
   ▼
   Linear(128 → 2)  (zero-initialised)
@@ -224,7 +225,7 @@ Input: [B, 16, 128]  latent features from §3
 Output: [B, 16, 2]  (velocity field for CFM / position predictions for AR)
 ```
 
-The `AutoregressiveWrapper` chains §3 + §4 and adds:
+The `AutoregressiveWrapper` chains §4 + §5 and adds:
 - A learned `start_token` parameter (1, 2)
 - Causal masking (`-inf` above diagonal)
 - Step-by-step generation logic with optional noise and drift bias
@@ -234,6 +235,7 @@ The `AutoregressiveWrapper` chains §3 + §4 and adds:
 | Diagram Section | Component | Our Code | Training | Inference |
 |---|---|---|---|---|
 | **§1 Pilot Space** | 2D Video → ViT → 3D Tokens | `ContextAssembler` — static `(1, 32, 128)` Xavier tensor | Not trained | Used as **K, V** memory bank |
-| **§2 Conditioning** | Telemetry + A* → Conditioning Vector | Same `context` tensor | Not trained | Used as **K, V** memory bank |
-| **§3 Latent & Flight Gen** | z0 → Cross-Attn → Decoder → CFM ODE → z1 | `FSD3DTransformerDecoder` | **Trained here** | ODE integration (CFM) or roll-out (AR) |
-| **§4 Action Loop** | Action Head D → Trajectory | `ActionHead` (Linear 128→2) + `denormalize_trajectory()` | Trained jointly with §3 | Projects latent → action-space positions |
+| **§2 Conditioning** | Telemetry + A* → Conditioning Tokens | Same `context` tensor | Not trained | Used as **K, V** memory bank |
+| **§3 Context Normalization** | Merge + Normalize to 32 Tokens | Same `context` tensor | Not trained | Used as **K, V** memory bank |
+| **§4 Latent & Flight Gen** | z0 → Cross-Attn → Decoder → CFM ODE → z1 | `FSD3DTransformerDecoder` | **Trained here** | ODE integration (CFM) or roll-out (AR) |
+| **§5 Action Loop** | Action Projection → Action Head D → Trajectory | `ActionProjection` (Linear 2→128) + `ActionHead` (Linear 128→2) + `denormalize_trajectory()` | Trained jointly with §4 | Projects z_tau → Q, then latent → action-space positions |

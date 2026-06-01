@@ -1,10 +1,14 @@
-"""Conditioner sub-package — §2 Conditioning.
+"""Conditioner sub-package — §2 Conditioning + §3 Context Normalization.
 
 Produces the conditioning context vector from telemetry and
-pathfinding (A*) guidance data, concatenated with visual tokens
-from §1 to form the full context memory bank (K, V) for the §3 decoder.
+pathfinding (A*) guidance data, then normalizes with §3
+ContextNormalizer to form the full context memory bank (K, V)
+for the §4 decoder.
 """
 
-from fsd3d.conditioner.conditioner import Conditioner, TelemetryEncoder, PathEncoder
+from fsd3d.conditioner.telemetry_encoder import TelemetryEncoder
+from fsd3d.conditioner.path_encoder import PathEncoder
+from fsd3d.conditioner.conditioner import Conditioner
+from fsd3d.conditioner.normalizer import ContextNormalizer
 
-__all__ = ["Conditioner", "TelemetryEncoder", "PathEncoder"]
+__all__ = ["TelemetryEncoder", "PathEncoder", "Conditioner", "ContextNormalizer"]

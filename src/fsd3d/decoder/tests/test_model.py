@@ -156,7 +156,7 @@ class TestActionHead:
         assert torch.allclose(out, torch.zeros_like(out), atol=1e-6)
 
     def test_decoder_action_head_pipeline(self, model, action_head, sample_inputs):
-        """Chaining §3 decoder → §4 ActionHead gives (B, T, action_dim)."""
+        """Chaining §4 decoder → §5 ActionHead gives (B, T, action_dim)."""
         z_tau, tau, context = sample_inputs
         latent = model(z_tau, tau, context)
         actions = action_head(latent)

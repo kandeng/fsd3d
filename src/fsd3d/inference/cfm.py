@@ -18,8 +18,8 @@ def infer_cfm_euler(
     """Run CFM inference using the Euler ODE solver.
 
     Args:
-        decoder:     trained FSD3DTransformerDecoder (§3)
-        action_head: trained ActionHead (§4)
+        decoder:     trained FSD3DTransformerDecoder (§4)
+        action_head: trained ActionHead (§5)
         context:     (1, 32, 128) context tensor
         horizon:     planning horizon (T)
         euler_steps: number of Euler integration steps

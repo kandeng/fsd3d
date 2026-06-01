@@ -1,8 +1,8 @@
-# §1 Encoder & §2 Conditioner
+# §1 Encoder, §2 Conditioner & §3 Context Normalizer
 
-This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter) and the closely related **§2 Conditioning** module. Together, they convert raw perception data into the context memory bank `(K, V)` that the §3 FSD3D Transformer Decoder queries via cross-attention.
+This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter), the **§2 Conditioning** module, and the **§3 Context Normalization** module. Together, they convert raw perception data into the context memory bank `(K, V)` that the §4 FSD3D Transformer Decoder queries via cross-attention.
 
-> **Scope note**: The conditioner lives at `src/fsd3d/conditioner/`, but is documented here because §1 and §2 form a single logical pipeline — their outputs are concatenated before being consumed by §3.
+> **Scope note**: The conditioner lives at `src/fsd3d/conditioner/` and the normalizer also lives at `src/fsd3d/conditioner/normalizer.py`, but all three are documented here because §1, §2, and §3 form a single logical pipeline — their outputs are combined by §3 before being consumed by §4.
 
 ---
 
@@ -10,11 +10,11 @@ This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter) a
 
 ![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance with source ID embedding. §3 (Context Normalization) merges and normalizes §1 + §2 outputs to exactly 32 tokens as K, V, while Q originates from z_tau via action projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
+*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance. §3 (Context Normalization) merges §1 + §2 outputs, adds source ID embedding, and normalizes to exactly 32 tokens as K, V, while Q originates from z_tau via §5 Action Projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
 
 ### §1 Encoder — Pilot Space
 
-The encoder converts **raw 2D video frames** into a sequence of **visual tokens** that serve as the **Key (K) and Value (V)** inputs to the §3 decoder's cross-attention mechanism.
+The encoder converts **raw 2D video frames** into a sequence of **visual tokens** that serve as the **Key (K) and Value (V)** inputs (after §3 normalization) to the §4 decoder's cross-attention mechanism.
 
 Key design principles:
 
@@ -28,21 +28,26 @@ Key design principles:
 The conditioner assembles conditioning tokens from two non-visual data streams:
 
 | Input | Encoder | Rationale |
-|-------|---------|-----------|
+|-------|---------|----------|
 | **Telemetry** (9 scalars: x, y, z, vx, vy, vz, roll, pitch, yaw) | `TelemetryEncoder` (MLP) | A handful of scalars with no sequence structure — an MLP suffices |
 | **A\* Guidance** (N waypoints × 3 coordinates) | `PathEncoder` (1-layer transformer) | Waypoints form a spatial sequence with meaningful relationships (continuity, direction changes) |
 
-The conditioner then:
-1. **Concatenates**: visual tokens (from §1) + 1 telemetry token + N path tokens
+The conditioner's output is a `(B, 1+N_wp, 128)` conditioning token sequence, which is then passed (along with §1 visual tokens) to the §3 ContextNormalizer.
+
+### §3 Context Normalizer — The Data Bridge
+
+The ContextNormalizer merges outputs from §1 and §2 and normalizes them to exactly 32 tokens:
+
+1. **Concatenates**: visual tokens (from §1 DomainAdapter) + conditioning tokens (from §2 Conditioner)
 2. **Adds source ID embedding**: a learned vector added to all tokens, distinguishing data sources during multi-domain training
 3. **Projects**: `Linear(d_model, d_model)` shared projection
 4. **Truncates/pads** to fixed `CONTEXT_TOKENS = 32` length
 
-The output is a `(B, 32, 128)` context tensor — this is the **K, V memory bank** for §3's cross-attention.
+The output is a `(B, 32, 128)` context tensor — this is the **K, V memory bank** for §4's cross-attention.
 
 ### Critical insight: where does Q come from?
 
-The Query (Q) fed into §3's cross-attention does **not** come from §1 or §2. Q originates from `z_tau`, the current state of the generative process (either the noise canvas in CFM or the partially-generated sequence in AR). The decoder's `action_projection` maps `z_tau` into `d_model`-dimensional tokens that serve as Q, while the context from §1+§2 serves as K, V. The decoder is **input-agnostic** — it receives abstract numerical tensors and has no knowledge of what they physically represent.
+The Query (Q) fed into §4's cross-attention does **not** come from §1, §2, or §3. Q originates from `z_tau`, the current state of the generative process (either the noise canvas in CFM or the partially-generated sequence in AR). The §5 `ActionProjection` module maps `z_tau` into `d_model`-dimensional tokens that serve as Q, while the context from §1+§2+§3 serves as K, V. The decoder is **input-agnostic** — it receives abstract numerical tensors and has no knowledge of what they physically represent.
 
 ---
 
@@ -56,25 +61,29 @@ The Query (Q) fed into §3's cross-attention does **not** come from §1 or §2. 
 | `domain_adapter.py` | **DomainAdapter** (between §1 output and K,V) | `DomainAdapter` (abstract base, pass-through) and `LinearDomainAdapter` (learned linear projection). Compensates for domain shift between data sources. |
 | `__init__.py` | — | Exports `ViTEncoder`, `DomainAdapter`, `LinearDomainAdapter`. |
 
-### `src/fsd3d/conditioner/` (§2)
+### `src/fsd3d/conditioner/` (§2 + §3)
 
 | File | Component in Diagram | Description |
 |------|---------------------|-------------|
-| `conditioner.py` | **TelemetryEncoder**, **PathEncoder**, **Concatenation (+)** in §2 | `TelemetryEncoder` (MLP: 9→128→128), `PathEncoder` (1-layer transformer: N×3 → N×128), `Conditioner` (concatenation + source ID + projection + truncate/pad to 32 tokens). Output: `(B, 32, 128)` context. |
-| `__init__.py` | — | Exports `Conditioner`, `TelemetryEncoder`, `PathEncoder`. |
+| `telemetry_encoder.py` | **TelemetryEncoder** in §2 | `TelemetryEncoder` (MLP: 9→128→128). Encodes telemetry scalars into a d_model token. |
+| `path_encoder.py` | **PathEncoder** (within §2 A* Guidance) | `PathEncoder` (1-layer transformer: N×3 → N×128). Encodes waypoint sequences. |
+| `conditioner.py` | **Concatenation (+)** in §2 | `Conditioner` — orchestrates TelemetryEncoder + PathEncoder, concatenates outputs to (B, 1+N_wp, 128) conditioning tokens. |
+| `normalizer.py` | **§3 Context Normalization** | `ContextNormalizer` — merges §1 visual + §2 conditioning tokens, adds source ID embedding, projects, and truncates/pads to (B, 32, 128) context. |
+| `__init__.py` | — | Exports `TelemetryEncoder`, `PathEncoder`, `Conditioner`, `ContextNormalizer`. |
 
 ### `src/fsd3d/constants.py` (shared)
 
-All hyperparameters shared across §1, §2, §3 are defined here to avoid circular imports:
+All hyperparameters shared across §1, §2, §3, §4, §5 are defined here to avoid circular imports:
 
 | Constant | Value | Used by |
 |----------|-------|---------|
-| `D_MODEL` | 128 | §1, §2, §3 |
-| `NHEAD` | 4 | §1, §2, §3 |
-| `DIM_FEEDFORWARD` | 512 | §1, §2, §3 |
+| `D_MODEL` | 128 | §1, §2, §3, §4, §5 |
+| `NHEAD` | 4 | §1, §2, §4 |
+| `DIM_FEEDFORWARD` | 512 | §1, §2, §4 |
 | `ENCODER_LAYERS` | 2 | §1 |
-| `DECODER_LAYERS` | 3 | §3 |
-| `CONTEXT_TOKENS` | 32 | §2, §3 |
+| `DECODER_LAYERS` | 3 | §4 |
+| `CONTEXT_TOKENS` | 32 | §3 |
+| `ACTION_DIM` | 2 | §5 |
 | `PATCH_SIZE` | 16 | §1 |
 | `IMAGE_SIZE` | 224 | §1 |
 | `NUM_PATCHES` | 196 | §1 |
@@ -93,14 +102,14 @@ All hyperparameters shared across §1, §2, §3 are defined here to avoid circul
 
 ```
 Raw 2D Video ──► ViTEncoder ──► DomainAdapter ──┐
-                                                  ├─► Concatenation ──► Projection ──► Context (K, V)
-Telemetry ─────► TelemetryEncoder ───────────────┤                        (1, 32, 128)
-                                                  │
+                                                  ├─► ContextNormalizer (§3) ──► Context (K, V)
+Telemetry ─────► TelemetryEncoder ───────────────┤    Source ID + Projection        (1, 32, 128)
+                                                  │    + Truncate/Pad
 A* Waypoints ──► PathEncoder ────────────────────┘
                                                         │
                                                         ▼
-                                              FSD3D Transformer Decoder (§3)
-                                              Q from z_tau, K/V from context
+                                              FSD3D Transformer Decoder (§4)
+                                              Q from z_tau (§5), K/V from context
 ```
 
 ---
@@ -120,6 +129,7 @@ pip install -e .
 # Verify installation
 python -c "from fsd3d.encoder import ViTEncoder, DomainAdapter, LinearDomainAdapter; print('§1 OK')"
 python -c "from fsd3d.conditioner import Conditioner, TelemetryEncoder, PathEncoder; print('§2 OK')"
+python -c "from fsd3d.conditioner import ContextNormalizer; print('§3 OK')"
 ```
 
 Dependencies (installed automatically via `pyproject.toml`):
@@ -131,7 +141,7 @@ Dependencies (installed automatically via `pyproject.toml`):
 
 ## 4. Usage Example: fsd3d-3dgs
 
-The `examples/fsd3d-3dgs/` project demonstrates how to use the `fsd3d` package with 3D Gaussian Splatting (3DGS) as the data source. It implements the full pipeline: load a 3DGS scene → plan an A* path → render video frames → feed through §1 and §2 → produce context for §3.
+The `examples/fsd3d-3dgs/` project demonstrates how to use the `fsd3d` package with 3D Gaussian Splatting (3DGS) as the data source. It implements the full pipeline: load a 3DGS scene → plan an A* path → render video frames → feed through §1, §2, and §3 → produce context for §4.
 
 ### 4.1 Install the 3DGS example
 
@@ -149,7 +159,7 @@ You can use the encoder and conditioner directly without the plugin system:
 ```python
 import torch
 from fsd3d.encoder import ViTEncoder, LinearDomainAdapter
-from fsd3d.conditioner import Conditioner
+from fsd3d.conditioner import Conditioner, ContextNormalizer
 
 # §1: Encode video frames
 encoder = ViTEncoder()          # (B, 12, 224, 224) → (B, 196, 128)
@@ -165,8 +175,13 @@ conditioner = Conditioner()
 telemetry = torch.randn(1, 9)    # [x, y, z, vx, vy, vz, roll, pitch, yaw]
 waypoints = torch.randn(1, 16, 3) # 16 A* waypoints (x, y, z)
 
-context = conditioner(telemetry, waypoints, adapted_tokens)
-# → (1, 32, 128) — ready for §3 decoder
+conditioning_tokens = conditioner(telemetry, waypoints)
+# → (1, 17, 128) — 1 telem + 16 path
+
+# §3: Normalize to fixed-length context
+normalizer = ContextNormalizer()
+context = normalizer(adapted_tokens, conditioning_tokens)
+# → (1, 32, 128) — ready for §4 decoder
 ```
 
 ### 4.3 Use the ThreeDGSPlugin (full pipeline)
@@ -185,10 +200,10 @@ plugin = ThreeDGSPlugin(
     device="cuda",
 )
 
-# §1 + §2: Build context tensor
+# §1 + §2 + §3: Build context tensor
 context = plugin.build_context()        # (1, 32, 128), no grad
 
-# Expert trajectories for §3 training
+# Expert trajectories for §4 training
 plans = plugin.build_target_plans()      # (2, 16, 2), normalized
 
 # Obstacle parameters for collision detection
@@ -204,7 +219,8 @@ Under the hood, `ThreeDGSPlugin.build_context()` runs:
 5. **`SceneRenderer`** — renders RGB frames along the path via gsplat
 6. **`ViTEncoder`** (§1) — frames → visual tokens `(1, 196, 128)`
 7. **`LinearDomainAdapter`** — adapts visual tokens for domain shift
-8. **`Conditioner`** (§2) — telemetry + waypoints + visual → context `(1, 32, 128)`
+8. **`Conditioner`** (§2) — telemetry + waypoints → conditioning tokens `(1, 17, 128)`
+9. **`ContextNormalizer`** (§3) — visual + conditioning → context `(1, 32, 128)`
 
 ### 4.4 Train the decoder with 3DGS context
 
@@ -255,7 +271,8 @@ Several tasks in this pipeline require a CUDA-capable GPU and cannot run on CPU-
 |------|:---:|--------|
 | §1 `ViTEncoder` forward pass | No | Small model (2 layers, 196 patches) runs fine on CPU for inference |
 | §2 `Conditioner` forward pass | No | MLP + 1-layer transformer, trivially small |
-| §3 Decoder training (CFM/AR) | **Yes** | Backpropagation through 3-layer transformer, thousands of epochs |
+| §3 `ContextNormalizer` forward pass | No | Single Linear + truncate/pad, trivially small |
+| §4 Decoder training (CFM/AR) | **Yes** | Backpropagation through 3-layer transformer, thousands of epochs |
 | 3DGS rendering (`gsplat`) | **Yes** | CUDA-only rasterization kernel — no CPU fallback |
 | PLY scene loading | No | CPU-based file parsing via `plyfile` |
 | Voxel map construction | No | CPU NumPy operations |
@@ -334,7 +351,7 @@ import torch
 from fsd3d_3dgs.plugin import ThreeDGSPlugin
 from fsd3d.training.cfm import train_cfm
 
-# Build 3DGS context (renders frames via gsplat → §1 + §2 → context tensor)
+# Build 3DGS context (renders frames via gsplat → §1 + §2 + §3 → context tensor)
 plugin = ThreeDGSPlugin(
     ply_path="asset/egglestone_abbey.ply",
     start=np.array([-2.0, -2.0, 0.0]),
@@ -344,7 +361,7 @@ plugin = ThreeDGSPlugin(
 context = plugin.build_context()        # (1, 32, 128)
 plans = plugin.build_target_plans()      # (2, 16, 2)
 
-# Train §3 decoder with CFM (GPU required for backprop)
+# Train §4 decoder with CFM (GPU required for backprop)
 train_cfm(context, plans, num_epochs=5000, lr=1e-4, device="cuda")
 ```
 
@@ -355,7 +372,7 @@ On the GPU server with the PLY file in place:
 ```bash
 cd examples/fsd3d-3dgs
 python -m pytest tests/ -v
-# Expected: 14 unit tests + 4 PLY integration tests all pass
+# Expected: 19 unit tests + 4 PLY integration tests all pass
 ```
 
-On a CPU-only machine, the 4 PLY tests are automatically skipped, and only the 14 unit tests run.
+On a CPU-only machine, the 4 PLY tests are automatically skipped, and only the 19 unit tests run.

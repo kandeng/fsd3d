@@ -1,22 +1,24 @@
-"""§3 — FSD3D Transformer Decoder: Latent & Flight Generation Space.
+"""§4 — FSD3D Transformer Decoder: Latent & Flight Generation Space.
 
 Transformer decoder that maps (z_tau, tau, context) → (B, T, d_model)
 latent features.  The model is deliberately agnostic to which paradigm
 (CFM or AR) uses it — no paradigm-specific branches exist.
 
 The output is in *latent space*, not action space.  A separate ActionHead
-(§4) converts latent features to control commands.
+(§5) converts latent features to control commands.
 """
 
 import torch
 import torch.nn as nn
 
+from fsd3d.decoder.action_projection import ActionProjection
+
 
 class FSD3DTransformerDecoder(nn.Module):
-    """§3 — Latent & Flight Generation Space.
+    """§4 — Latent & Flight Generation Space.
 
     Decoder layers:
-      - action_projection: Linear(2, 128)
+      - action_projection: ActionProjection (2 → 128)  — §5 module, used here as Q source
       - position_embedding: (1, 32, 128) learned
       - time_embedding:    Linear(1, 128)
       - transformer:       TransformerDecoder(d_model=128, nhead=4, num_layers=3,
@@ -37,8 +39,8 @@ class FSD3DTransformerDecoder(nn.Module):
         super().__init__()
         self.d_model = d_model
 
-        # Project action-space tokens into the model dimension
-        self.action_projection = nn.Linear(action_dim, d_model)
+        # §5 Action Projection: project z_tau (action-space) → Q (d_model)
+        self.action_projection = ActionProjection(action_dim, d_model)
 
         # Learned positional encoding — tells the model which step each token is
         self.position_embedding = nn.Parameter(torch.randn(1, max_len, d_model) * 0.02)
@@ -62,20 +64,20 @@ class FSD3DTransformerDecoder(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, z_tau, tau, context, tgt_mask=None):
-        """Forward pass — §3 Latent & Flight Generation.
+        """Forward pass — §4 Latent & Flight Generation.
 
         Args:
-            z_tau:   [B, T, action_dim] — current canvas state
+            z_tau:   [B, T, action_dim] — current canvas state (§5 z_tau)
             tau:     [B, 1]             — flow time scalar per sample
-            context: [B, S, d_model]    — memory bank (K, V)
+            context: [B, S, d_model]    — memory bank (K, V) from §3
             tgt_mask:[T, T] or None     — causal mask for AR mode
 
         Returns:
-            latent:  [B, T, d_model] — latent features (§3 output)
+            latent:  [B, T, d_model] — latent features (§4 output)
         """
         B, T, _ = z_tau.shape
 
-        # 1. Project actions to d_model
+        # 1. §5 Action Projection: z_tau → Q tokens
         q_tokens = self.action_projection(z_tau)        # [B, T, d_model]
 
         # 2. Add learned positional encoding
@@ -95,6 +97,6 @@ class FSD3DTransformerDecoder(nn.Module):
             tgt_mask=tgt_mask,                          # None for CFM, causal for AR
         )                                               # [B, T, d_model]
 
-        # 6. Final norm — output is latent (§3)
+        # 6. Final norm — output is latent (§4)
         latent = self.norm(decoded)                     # [B, T, d_model]
         return latent

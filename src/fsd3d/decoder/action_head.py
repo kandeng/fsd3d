@@ -1,4 +1,4 @@
-"""§4 — Action Loop: converts latent features to control commands.
+"""§5 — Action Loop: converts latent features to control commands.
 
 A single linear projection from d_model latent space to action_dim
 control space.  Zero-initialised so early predictions are near-zero,
@@ -9,7 +9,7 @@ import torch.nn as nn
 
 
 class ActionHead(nn.Module):
-    """§4 — Action Loop: converts latent features to control commands."""
+    """§5 — Action Loop: converts latent features to control commands."""
 
     def __init__(self, d_model: int = 128, action_dim: int = 2):
         super().__init__()
@@ -26,6 +26,6 @@ class ActionHead(nn.Module):
 
         Returns:
             actions: [B, T, action_dim] — velocity vectors (CFM) or
-                     coordinate predictions (AR)
+                     coordinate predictions (AR).  Part of §5 Action Loop.
         """
         return self.head(latent)

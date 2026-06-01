@@ -15,7 +15,7 @@ NHEAD = 4             # Number of attention heads
 DIM_FEEDFORWARD = 512  # FFN intermediate dimension
 NUM_EXPERTS = 2       # Number of expert trajectories (left + right dodge)
 
-# Decoder (§3)
+# Decoder (§4)
 DECODER_LAYERS = 3
 
 # Encoder (§1)

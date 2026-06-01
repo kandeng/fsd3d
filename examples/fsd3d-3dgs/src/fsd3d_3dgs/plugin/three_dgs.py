@@ -1,9 +1,9 @@
-"""3DGS DataSourcePlugin — orchestrates the full §1 + §2 data pipeline.
+"""3DGS DataSourcePlugin — orchestrates the full §1 + §2 + §3 data pipeline.
 
 Loads a 3DGS scene, builds a voxel map, plans an A* path, fakes telemetry,
-renders frames along the path, encodes them through the §1 ViT encoder and
-§2 conditioner, and produces the context tensor + target plans expected by
-the §3 decoder.
+renders frames along the path, encodes them through the §1 ViT encoder,
+§2 conditioner, and §3 ContextNormalizer, and produces the context
+tensor + target plans expected by the §4 decoder.
 
 This is the concrete plugin that bridges domain-specific 3DGS data into
 the source-agnostic fsd3d framework.
@@ -21,6 +21,7 @@ from fsd3d.constants import (
 from fsd3d.encoder.vit_encoder import ViTEncoder
 from fsd3d.encoder.domain_adapter import LinearDomainAdapter
 from fsd3d.conditioner.conditioner import Conditioner
+from fsd3d.conditioner.normalizer import ContextNormalizer
 
 from fsd3d_3dgs.scene.loader import SceneLoader
 from fsd3d_3dgs.scene.renderer import SceneRenderer
@@ -40,10 +41,11 @@ class ThreeDGSPlugin(DataSourcePlugin):
       5. Render frames along path (gsplat rasterization)
       6. §1 ViT encoder: frames → visual tokens
       7. Domain adapter: visual tokens → adapted tokens
-      8. §2 Conditioner: telemetry + waypoints + visual → context (1, 32, 128)
+      8. §2 Conditioner: telemetry + waypoints → conditioning tokens
+      9. §3 ContextNormalizer: visual + conditioning → context (1, 32, 128)
 
     The plugin also produces expert target plans from the A* path for
-    training the §3 decoder.
+    training the §4 decoder.
     """
 
     def __init__(
@@ -77,11 +79,13 @@ class ThreeDGSPlugin(DataSourcePlugin):
         self._encoder = ViTEncoder().to(device)
         self._adapter = LinearDomainAdapter().to(device)
         self._conditioner = Conditioner().to(device)
+        self._normalizer = ContextNormalizer().to(device)
 
         # Set to eval mode — no dropout, no gradient
         self._encoder.eval()
         self._adapter.eval()
         self._conditioner.eval()
+        self._normalizer.eval()
 
     def _ensure_loaded(self):
         """Lazy-load the scene and run the full pipeline."""
@@ -151,7 +155,7 @@ class ThreeDGSPlugin(DataSourcePlugin):
             visual_tokens = self._encoder(images)  # (1, 196, 128)
             adapted_tokens = self._adapter(visual_tokens)  # (1, 196, 128)
 
-            # 8. §2 Conditioner: telemetry + waypoints + visual → context
+            # 8. §2 Conditioner: telemetry + waypoints → conditioning tokens
             telemetry_t = torch.tensor(
                 self._telemetry[-1:], dtype=torch.float32, device=self.device
             )  # (1, 9) — use last telemetry reading
@@ -168,7 +172,11 @@ class ThreeDGSPlugin(DataSourcePlugin):
                 downsampled, dtype=torch.float32, device=self.device
             ).unsqueeze(0)  # (1, 16, 3)
 
-            context = self._conditioner(telemetry_t, waypoints_t, adapted_tokens)
+            conditioning_tokens = self._conditioner(telemetry_t, waypoints_t)
+            # (1, 1 + 16, 128) = (1, 17, 128)
+
+            # 9. §3 ContextNormalizer: visual + conditioning → context
+            context = self._normalizer(adapted_tokens, conditioning_tokens)
             # (1, context_tokens, d_model) = (1, 32, 128)
 
         self._context = context.detach()

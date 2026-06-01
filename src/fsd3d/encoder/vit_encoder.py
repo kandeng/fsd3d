@@ -1,7 +1,7 @@
 """§1 — ViT Encoder: Pilot Space.
 
 Vision Transformer encoder that converts video frames into visual tokens
-serving as (K, V) context for the §3 decoder's cross-attention.
+serving as (K, V) context for the §4 decoder's cross-attention.
 
 The encoder is source-agnostic — it processes (B, C*N_stack, H, W) image
 tensors regardless of whether the pixels came from 3DGS, Google Earth,
@@ -28,7 +28,7 @@ class ViTEncoder(nn.Module):
     """§1 — Pilot Space: Vision Transformer encoder.
 
     Converts image frames into a sequence of visual tokens that serve as
-    (K, V) memory for the §3 decoder's cross-attention.
+    (K, V) memory for the §4 decoder's cross-attention.
 
     The encoder uses self-attention only (no cross-attention, no time
     conditioning, no causal mask).  It compresses the visual scene into
@@ -86,7 +86,7 @@ class ViTEncoder(nn.Module):
                     For 4 stacked RGB frames: (B, 12, 224, 224).
 
         Returns:
-            (B, num_patches, d_model) visual tokens — fed as K, V into §3.
+            (B, num_patches, d_model) visual tokens — fed as K, V into §4.
         """
         B = images.size(0)
 

@@ -181,11 +181,11 @@ class TestAStarPlanner:
 
 
 # ===========================================================================
-# Unit tests — §1 + §2 neural modules (no PLY, no GPU)
+# Unit tests — §1 + §2 + §3 neural modules (no PLY, no GPU)
 # ===========================================================================
 
 class TestEncoderAndConditioner:
-    """Test ViTEncoder, DomainAdapter, and Conditioner shapes."""
+    """Test ViTEncoder, DomainAdapter, Conditioner, and ContextNormalizer shapes."""
 
     def test_vit_encoder_shape(self):
         """ViTEncoder: (B, 12, 224, 224) → (B, 196, 128)."""
@@ -208,17 +208,81 @@ class TestEncoderAndConditioner:
         assert out.shape == (2, 196, 128)
 
     def test_conditioner_shape(self):
-        """Conditioner produces (B, 32, 128) context tensor."""
+        """§2 Conditioner produces (B, 1+N_wp, 128) conditioning tokens."""
         from fsd3d.conditioner.conditioner import Conditioner
-        from fsd3d.constants import CONTEXT_TOKENS
 
         cond = Conditioner()
         telemetry = torch.randn(2, 9)
         waypoints = torch.randn(2, 16, 3)
-        visual_tokens = torch.randn(2, 196, 128)
         with torch.no_grad():
-            context = cond(telemetry, waypoints, visual_tokens)
+            conditioning = cond(telemetry, waypoints)
+        assert conditioning.shape == (2, 17, 128)  # 1 telem + 16 path
+
+    def test_context_normalizer_shape(self):
+        """§3 ContextNormalizer produces (B, 32, 128) from visual + conditioning."""
+        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.constants import CONTEXT_TOKENS
+
+        normalizer = ContextNormalizer()
+        visual_tokens = torch.randn(2, 196, 128)
+        conditioning_tokens = torch.randn(2, 17, 128)
+        with torch.no_grad():
+            context = normalizer(visual_tokens, conditioning_tokens)
         assert context.shape == (2, CONTEXT_TOKENS, 128)
+
+    def test_context_normalizer_truncation(self):
+        """§3 ContextNormalizer truncates when token count > 32."""
+        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.constants import CONTEXT_TOKENS
+
+        normalizer = ContextNormalizer()
+        # 196 visual + 17 conditioning = 213 tokens → truncated to 32
+        visual_tokens = torch.randn(2, 196, 128)
+        conditioning_tokens = torch.randn(2, 17, 128)
+        with torch.no_grad():
+            context = normalizer(visual_tokens, conditioning_tokens)
+        assert context.shape == (2, CONTEXT_TOKENS, 128)
+
+    def test_context_normalizer_padding(self):
+        """§3 ContextNormalizer pads when token count < 32."""
+        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.constants import CONTEXT_TOKENS
+
+        normalizer = ContextNormalizer()
+        # 5 visual + 3 conditioning = 8 tokens → padded to 32
+        visual_tokens = torch.randn(2, 5, 128)
+        conditioning_tokens = torch.randn(2, 3, 128)
+        with torch.no_grad():
+            context = normalizer(visual_tokens, conditioning_tokens)
+        assert context.shape == (2, CONTEXT_TOKENS, 128)
+        # Padded positions should be zero
+        assert torch.allclose(context[:, 8:, :], torch.zeros_like(context[:, 8:, :]))
+
+    def test_full_encoder_conditioner_normalizer_pipeline(self):
+        """Full pipeline: §1 encoder + §2 conditioner + §3 normalizer → (B, 32, 128)."""
+        from fsd3d.encoder.vit_encoder import ViTEncoder
+        from fsd3d.encoder.domain_adapter import LinearDomainAdapter
+        from fsd3d.conditioner.conditioner import Conditioner
+        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.constants import CONTEXT_TOKENS
+
+        encoder = ViTEncoder()
+        adapter = LinearDomainAdapter()
+        conditioner = Conditioner()
+        normalizer = ContextNormalizer()
+
+        B = 1
+        images = torch.randn(B, 12, 224, 224)
+        telemetry = torch.randn(B, 9)
+        waypoints = torch.randn(B, 16, 3)
+
+        with torch.no_grad():
+            visual_tokens = encoder(images)
+            adapted_tokens = adapter(visual_tokens)
+            conditioning_tokens = conditioner(telemetry, waypoints)
+            context = normalizer(adapted_tokens, conditioning_tokens)
+
+        assert context.shape == (B, CONTEXT_TOKENS, 128)
 
 
 # ===========================================================================
@@ -226,7 +290,7 @@ class TestEncoderAndConditioner:
 # ===========================================================================
 
 class TestDecoderWithContext:
-    """Test §3 decoder + §4 ActionHead with synthetic context."""
+    """Test §4 decoder + §5 ActionHead with synthetic context."""
 
     def test_cfm_forward(self):
         """CFM forward: decoder + action_head produce (B, 16, 2)."""
@@ -249,11 +313,21 @@ class TestDecoderWithContext:
         assert latent.shape == (B, HORIZON, 128)
         assert actions.shape == (B, HORIZON, 2)
 
-    def test_decoder_with_conditioner_context(self):
-        """Full pipeline: encoder → conditioner → decoder → action_head."""
+    def test_action_projection_shape(self):
+        """§5 ActionProjection: (B, T, 2) → (B, T, 128)."""
+        from fsd3d.decoder.action_projection import ActionProjection
+
+        proj = ActionProjection()
+        z_tau = torch.randn(2, 16, 2)
+        q_tokens = proj(z_tau)
+        assert q_tokens.shape == (2, 16, 128)
+
+    def test_decoder_with_full_pipeline(self):
+        """Full pipeline: §1 encoder → §2 conditioner → §3 normalizer → §4 decoder → §5 action_head."""
         from fsd3d.encoder.vit_encoder import ViTEncoder
         from fsd3d.encoder.domain_adapter import LinearDomainAdapter
         from fsd3d.conditioner.conditioner import Conditioner
+        from fsd3d.conditioner.normalizer import ContextNormalizer
         from fsd3d.decoder.transformer import FSD3DTransformerDecoder
         from fsd3d.decoder.action_head import ActionHead
         from fsd3d.constants import HORIZON, CONTEXT_TOKENS
@@ -261,6 +335,7 @@ class TestDecoderWithContext:
         encoder = ViTEncoder()
         adapter = LinearDomainAdapter()
         conditioner = Conditioner()
+        normalizer = ContextNormalizer()
         decoder = FSD3DTransformerDecoder()
         action_head = ActionHead()
 
@@ -274,7 +349,8 @@ class TestDecoderWithContext:
         with torch.no_grad():
             visual_tokens = encoder(images)
             adapted_tokens = adapter(visual_tokens)
-            context = conditioner(telemetry, waypoints, adapted_tokens)
+            conditioning_tokens = conditioner(telemetry, waypoints)
+            context = normalizer(adapted_tokens, conditioning_tokens)
             latent = decoder(z_tau, tau, context)
             actions = action_head(latent)
 

@@ -6,8 +6,9 @@ against Autoregressive MSE on trajectory generation tasks.
 Architecture sections:
     §1 encoder/     — Pilot Space: ViT encoder → 3D spatial latent tokens
     §2 conditioner/  — Conditioning: telemetry + A* guidance → conditioning vector
-    §3 decoder/      — Latent & Flight Generation: FSD3DTransformerDecoder
-    §4 decoder/      — Action Loop: ActionHead + AutoregressiveWrapper
+    §3 conditioner/  — Context Normalization: merge + normalize to 32 tokens
+    §4 decoder/      — Latent & Flight Generation: FSD3DTransformerDecoder
+    §5 decoder/      — Action Loop: ActionProjection + ActionHead + AutoregressiveWrapper
 """
 
 from fsd3d.constants import (
@@ -18,7 +19,14 @@ from fsd3d.constants import (
     NUM_EXPERTS,
     TRAJECTORY_SCALE,
 )
+from fsd3d.encoder.vit_encoder import ViTEncoder
+from fsd3d.encoder.domain_adapter import DomainAdapter, LinearDomainAdapter
+from fsd3d.conditioner.telemetry_encoder import TelemetryEncoder
+from fsd3d.conditioner.path_encoder import PathEncoder
+from fsd3d.conditioner.conditioner import Conditioner
+from fsd3d.conditioner.normalizer import ContextNormalizer
 from fsd3d.decoder.transformer import FSD3DTransformerDecoder
+from fsd3d.decoder.action_projection import ActionProjection
 from fsd3d.decoder.action_head import ActionHead
 from fsd3d.decoder.autoregressive import AutoregressiveWrapper
 from fsd3d.decoder.context import (
@@ -36,8 +44,19 @@ from fsd3d.plugin.mock import MockPlugin, PILLAR_CENTER_X, PILLAR_CENTER_Y, PILL
 __version__ = "0.1.0"
 
 __all__ = [
-    # §3 + §4
+    # §1 Pilot Space
+    "ViTEncoder",
+    "DomainAdapter",
+    "LinearDomainAdapter",
+    # §2 Conditioning
+    "TelemetryEncoder",
+    "PathEncoder",
+    "Conditioner",
+    # §3 Context Normalization
+    "ContextNormalizer",
+    # §4 + §5
     "FSD3DTransformerDecoder",
+    "ActionProjection",
     "ActionHead",
     "AutoregressiveWrapper",
     # Context

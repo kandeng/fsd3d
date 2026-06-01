@@ -2,7 +2,7 @@
 
 Provides a ViT-based vision encoder and domain adapter for
 converting 2D video frames into visual tokens that serve as
-(K, V) context for the §3 decoder's cross-attention.
+(K, V) context for the §4 decoder's cross-attention.
 """
 
 from fsd3d.encoder.vit_encoder import ViTEncoder
