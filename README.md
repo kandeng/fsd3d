@@ -4,7 +4,7 @@ A modular Python package implementing the FSD3D architecture for trajectory gene
 
 ## System Architecture
 
-![Overall Architecture](image/fsd3d_overall_architecture_02.png)
+![Overall Architecture](image/fsd3d_overall_architecture_03.png)
 
 The FSD3D pipeline processes raw video and telemetry into actionable flight trajectories through five stages:
 

@@ -8,7 +8,7 @@ This directory contains the **§1 Pilot Space** (ViT encoder), the **§2 Conditi
 
 ## 1. Goal and System Role
 
-![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_02.png)
+![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_03.png)
 
 *Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the VisualAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance. §3 (Data Bridge) merges §1 + §2 outputs via ContextNormalizer, adds source ID embedding, and normalizes to exactly 32 tokens as K, V, while Q originates from z_tau via §5 Action Projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
 

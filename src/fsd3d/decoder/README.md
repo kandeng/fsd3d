@@ -2,7 +2,7 @@
 
 The **decoder** sub-package implements §4 (Latent & Flight Generation) and §5 (Action Loop) of the FSD3D architecture. It contains the core model, training loops, inference routines, data assembly, and visualization — everything needed to train and evaluate the CFM vs AR comparison self-contained within this directory.
 
-![FSD3D Architecture](../../../image/fsd3d_overall_architecture_02.png)
+![FSD3D Architecture](../../../image/fsd3d_overall_architecture_03.png)
 
 *Figure: §4 (Latent & Flight Generation) and §5 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2 + §3 Data Bridge, and Q from z_tau via §5 Action Projection. It outputs a clean flight plan z₁, which the §5 Action Head projects to a 16×4 trajectory horizon matrix.*
 
