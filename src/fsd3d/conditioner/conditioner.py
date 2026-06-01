@@ -2,6 +2,7 @@
 
 Assembles conditioning tokens from telemetry readings and A* path waypoints.
 These tokens are then merged with §1 visual tokens by the §3 ContextNormalizer
+(in ``fsd3d.data_bridge.context_normalizer``)
 to form the context memory bank (K, V) for the §4 decoder's cross-attention.
 
 The conditioner is source-agnostic — the TelemetryEncoder MLP and
@@ -15,6 +16,7 @@ Architecture:
   - Both sub-encoders are imported from their own modules
   - Concatenation of telemetry + path tokens happens here (§2)
   - Source ID embedding, projection, and truncation live in §3 ContextNormalizer
+    (``fsd3d.data_bridge.context_normalizer``)
 """
 
 import torch
@@ -33,7 +35,8 @@ class Conditioner(nn.Module):
 
     Assembles conditioning tokens from telemetry readings and A* path
     waypoints.  The output is fed (along with §1 visual tokens) into the
-    §3 ContextNormalizer to produce the final context tensor.
+    §3 ContextNormalizer (``fsd3d.data_bridge.context_normalizer``) to produce
+    the final context tensor.
     """
 
     def __init__(
@@ -67,7 +70,8 @@ class Conditioner(nn.Module):
 
         Returns:
             (B, 1 + N_wp, d_model) conditioning tokens — to be merged with
-            §1 visual tokens by the §3 ContextNormalizer.
+            §1 visual tokens by the §3 ContextNormalizer
+            (``fsd3d.data_bridge.context_normalizer``).
         """
         # Encode telemetry → (B, 1, d_model)
         telem_token = self.telemetry_encoder(telemetry).unsqueeze(1)

@@ -19,9 +19,9 @@ from fsd3d.constants import (
     TRAJECTORY_SCALE, NUM_FRAMES_STACK, IMAGE_SIZE,
 )
 from fsd3d.encoder.vit_encoder import ViTEncoder
-from fsd3d.encoder.domain_adapter import LinearDomainAdapter
+from fsd3d.data_bridge.visual_adapter import LinearVisualAdapter
 from fsd3d.conditioner.conditioner import Conditioner
-from fsd3d.conditioner.normalizer import ContextNormalizer
+from fsd3d.data_bridge.context_normalizer import ContextNormalizer
 
 from fsd3d_3dgs.scene.loader import SceneLoader
 from fsd3d_3dgs.scene.renderer import SceneRenderer
@@ -40,9 +40,9 @@ class ThreeDGSPlugin(DataSourcePlugin):
       4. Fake telemetry along path (GPS/IMU/baro/orientation noise)
       5. Render frames along path (gsplat rasterization)
       6. §1 ViT encoder: frames → visual tokens
-      7. Domain adapter: visual tokens → adapted tokens
-      8. §2 Conditioner: telemetry + waypoints → conditioning tokens
-      9. §3 ContextNormalizer: visual + conditioning → context (1, 32, 128)
+      7. **`LinearVisualAdapter`** — adapts visual tokens for domain shift
+      8. **`Conditioner`** (§2) — telemetry + waypoints → conditioning tokens
+      9. **`ContextNormalizer`** (§3) — visual + conditioning → context (1, 32, 128)
 
     The plugin also produces expert target plans from the A* path for
     training the §4 decoder.
@@ -77,7 +77,7 @@ class ThreeDGSPlugin(DataSourcePlugin):
 
         # Neural network modules (shared parameters for all calls)
         self._encoder = ViTEncoder().to(device)
-        self._adapter = LinearDomainAdapter().to(device)
+        self._adapter = LinearVisualAdapter().to(device)
         self._conditioner = Conditioner().to(device)
         self._normalizer = ContextNormalizer().to(device)
 

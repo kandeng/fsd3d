@@ -1,8 +1,8 @@
-# §1 Encoder, §2 Conditioner & §3 Context Normalizer
+# §1 Encoder, §2 Conditioner & §3 Data Bridge
 
-This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter), the **§2 Conditioning** module, and the **§3 Context Normalization** module. Together, they convert raw perception data into the context memory bank `(K, V)` that the §4 FSD3D Transformer Decoder queries via cross-attention.
+This directory contains the **§1 Pilot Space** (ViT encoder), the **§2 Conditioning** module, and the **§3 Data Bridge** (VisualAdapter + ContextNormalizer). Together, they convert raw perception data into the context memory bank `(K, V)` that the §4 FSD3D Transformer Decoder queries via cross-attention.
 
-> **Scope note**: The conditioner lives at `src/fsd3d/conditioner/` and the normalizer also lives at `src/fsd3d/conditioner/normalizer.py`, but all three are documented here because §1, §2, and §3 form a single logical pipeline — their outputs are combined by §3 before being consumed by §4.
+> **Scope note**: The conditioner lives at `src/fsd3d/conditioner/` and the data bridge lives at `src/fsd3d/data_bridge/`, but all three are documented here because §1, §2, and §3 form a single logical pipeline — their outputs are combined by §3 before being consumed by §4.
 
 ---
 
@@ -10,7 +10,7 @@ This directory contains the **§1 Pilot Space** (ViT encoder + domain adapter), 
 
 ![FSD3D Overall Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the DomainAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance. §3 (Context Normalization) merges §1 + §2 outputs, adds source ID embedding, and normalizes to exactly 32 tokens as K, V, while Q originates from z_tau via §5 Action Projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
+*Figure: FSD3D Architecture — Latent Flight Generation & Control Flow Blueprint. §1 (Pilot Space) produces visual tokens from raw 2D video via the ViT encoder, adapted by the VisualAdapter. §2 (Conditioning) fuses telemetry and `A*` guidance. §3 (Data Bridge) merges §1 + §2 outputs via ContextNormalizer, adds source ID embedding, and normalizes to exactly 32 tokens as K, V, while Q originates from z_tau via §5 Action Projection. §4 (Latent & Flight Generation) runs the transformer decoder with cross-attention. §5 (Action Loop) projects the decoder output to a 16×4 trajectory horizon matrix.*
 
 ### §1 Encoder — Pilot Space
 
@@ -21,7 +21,7 @@ Key design principles:
 - **Source-agnostic**: The ViT encoder processes `(B, C*N_stack, H, W)` image tensors regardless of whether the pixels came from 3DGS rendering, Google Earth, or a real camera. It has no concept of "pillar" or "obstacle" — the environment is implicitly encoded in the token sequence.
 - **Self-attention only**: Unlike the decoder, the encoder uses no cross-attention, no time conditioning, and no causal mask. It compresses the visual scene through self-attention alone.
 - **Mirrors decoder architecture but simpler**: 2 layers (vs. decoder's 3), same `d_model=128`, `nhead=4`, `dim_feedforward=512`, Post-LN convention.
-- **Domain adaptation**: A separate `DomainAdapter` module compensates for domain shift between data sources (3DGS pixels vs. real camera pixels). This is where source-specific knowledge enters the pipeline.
+- **Domain adaptation**: A separate `VisualAdapter` module (in `fsd3d.data_bridge`) compensates for domain shift between data sources (3DGS pixels vs. real camera pixels). This is where source-specific knowledge enters the pipeline.
 
 ### §2 Conditioner — Conditioning
 
@@ -32,13 +32,19 @@ The conditioner assembles conditioning tokens from two non-visual data streams:
 | **Telemetry** (9 scalars: x, y, z, vx, vy, vz, roll, pitch, yaw) | `TelemetryEncoder` (MLP) | A handful of scalars with no sequence structure — an MLP suffices |
 | **A\* Guidance** (N waypoints × 3 coordinates) | `PathEncoder` (1-layer transformer) | Waypoints form a spatial sequence with meaningful relationships (continuity, direction changes) |
 
-The conditioner's output is a `(B, 1+N_wp, 128)` conditioning token sequence, which is then passed (along with §1 visual tokens) to the §3 ContextNormalizer.
+The conditioner's output is a `(B, 1+N_wp, 128)` conditioning token sequence, which is then passed (along with §1 visual tokens) to the §3 ContextNormalizer in `fsd3d.data_bridge`.
 
-### §3 Context Normalizer — The Data Bridge
+### §3 Data Bridge — The Data Bridge
 
-The ContextNormalizer merges outputs from §1 and §2 and normalizes them to exactly 32 tokens:
+The Data Bridge package (`fsd3d.data_bridge`) contains two modules that bridge §1 and §2 into the §4 decoder:
 
-1. **Concatenates**: visual tokens (from §1 DomainAdapter) + conditioning tokens (from §2 Conditioner)
+**VisualAdapter** adapts visual tokens across data sources:
+- Abstract base class `VisualAdapter` — pass-through by default
+- `LinearVisualAdapter` — learned linear projection for domain shift compensation
+
+**ContextNormalizer** merges and normalizes to exactly 32 tokens:
+
+1. **Concatenates**: visual tokens (from §1 VisualAdapter) + conditioning tokens (from §2 Conditioner)
 2. **Adds source ID embedding**: a learned vector added to all tokens, distinguishing data sources during multi-domain training
 3. **Projects**: `Linear(d_model, d_model)` shared projection
 4. **Truncates/pads** to fixed `CONTEXT_TOKENS = 32` length
@@ -58,18 +64,26 @@ The Query (Q) fed into §4's cross-attention does **not** come from §1, §2, or
 | File | Component in Diagram | Description |
 |------|---------------------|-------------|
 | `vit_encoder.py` | **2D-ViT Encoder (E)** in §1 | `ViTEncoder` — patch embedding → positional encoding → 2-layer `TransformerEncoder` → LayerNorm. Input: `(B, 12, 224, 224)` stacked frames. Output: `(B, 196, 128)` visual tokens. |
-| `domain_adapter.py` | **DomainAdapter** (between §1 output and K,V) | `DomainAdapter` (abstract base, pass-through) and `LinearDomainAdapter` (learned linear projection). Compensates for domain shift between data sources. |
-| `__init__.py` | — | Exports `ViTEncoder`, `DomainAdapter`, `LinearDomainAdapter`. |
+| `domain_adapter.py` | **[Shim]** | Re-exports `VisualAdapter` as `DomainAdapter` and `LinearVisualAdapter` as `LinearDomainAdapter` for backward compatibility. New code should use `fsd3d.data_bridge.visual_adapter` directly. |
+| `__init__.py` | — | Exports `ViTEncoder`. Re-exports `DomainAdapter`, `LinearDomainAdapter` from data_bridge. |
 
-### `src/fsd3d/conditioner/` (§2 + §3)
+### `src/fsd3d/data_bridge/` (§3 — Data Bridge)
+
+| File | Component in Diagram | Description |
+|------|---------------------|-------------|
+| `visual_adapter.py` | **VisualAdapter** (between §1 output and K,V) | `VisualAdapter` (abstract base, pass-through) and `LinearVisualAdapter` (learned linear projection). Adapts visual tokens across data sources. |
+| `context_normalizer.py` | **§3 Context Normalization** | `ContextNormalizer` — merges §1 visual + §2 conditioning tokens, adds source ID embedding, projects, and truncates/pads to (B, 32, 128) context. |
+| `__init__.py` | — | Exports `VisualAdapter`, `LinearVisualAdapter`, `ContextNormalizer`. |
+
+### `src/fsd3d/conditioner/` (§2)
 
 | File | Component in Diagram | Description |
 |------|---------------------|-------------|
 | `telemetry_encoder.py` | **TelemetryEncoder** in §2 | `TelemetryEncoder` (MLP: 9→128→128). Encodes telemetry scalars into a d_model token. |
 | `path_encoder.py` | **PathEncoder** (within §2 A* Guidance) | `PathEncoder` (1-layer transformer: N×3 → N×128). Encodes waypoint sequences. |
 | `conditioner.py` | **Concatenation (+)** in §2 | `Conditioner` — orchestrates TelemetryEncoder + PathEncoder, concatenates outputs to (B, 1+N_wp, 128) conditioning tokens. |
-| `normalizer.py` | **§3 Context Normalization** | `ContextNormalizer` — merges §1 visual + §2 conditioning tokens, adds source ID embedding, projects, and truncates/pads to (B, 32, 128) context. |
-| `__init__.py` | — | Exports `TelemetryEncoder`, `PathEncoder`, `Conditioner`, `ContextNormalizer`. |
+| `normalizer.py` | **[Shim]** | Re-exports `ContextNormalizer` from `fsd3d.data_bridge` for backward compatibility. |
+| `__init__.py` | — | Exports `TelemetryEncoder`, `PathEncoder`, `Conditioner`. Re-exports `ContextNormalizer` from data_bridge. |
 
 ### `src/fsd3d/constants.py` (shared)
 
@@ -101,15 +115,15 @@ All hyperparameters shared across §1, §2, §3, §4, §5 are defined here to av
 ### Data flow summary
 
 ```
-Raw 2D Video ──► ViTEncoder ──► DomainAdapter ──┐
-                                                  ├─► ContextNormalizer (§3) ──► Context (K, V)
-Telemetry ─────► TelemetryEncoder ───────────────┤    Source ID + Projection        (1, 32, 128)
-                                                  │    + Truncate/Pad
-A* Waypoints ──► PathEncoder ────────────────────┘
-                                                        │
-                                                        ▼
-                                              FSD3D Transformer Decoder (§4)
-                                              Q from z_tau (§5), K/V from context
+Raw 2D Video ──► ViTEncoder ──► VisualAdapter ──┐
+                                                 ├─► ContextNormalizer (§3) ──► Context (K, V)
+Telemetry ─────► TelemetryEncoder ────────────────┤    Source ID + Projection        (1, 32, 128)
+                                                 │    + Truncate/Pad
+A* Waypoints ──► PathEncoder ───────────────────┘
+                                                       │
+                                                       ▼
+                                             FSD3D Transformer Decoder (§4)
+                                             Q from z_tau (§5), K/V from context
 ```
 
 ---
@@ -127,9 +141,9 @@ cd fsd3d
 pip install -e .
 
 # Verify installation
-python -c "from fsd3d.encoder import ViTEncoder, DomainAdapter, LinearDomainAdapter; print('§1 OK')"
+python -c "from fsd3d.encoder import ViTEncoder; print('§1 OK')"
 python -c "from fsd3d.conditioner import Conditioner, TelemetryEncoder, PathEncoder; print('§2 OK')"
-python -c "from fsd3d.conditioner import ContextNormalizer; print('§3 OK')"
+python -c "from fsd3d.data_bridge import VisualAdapter, LinearVisualAdapter, ContextNormalizer; print('§3 OK')"
 ```
 
 Dependencies (installed automatically via `pyproject.toml`):
@@ -158,12 +172,13 @@ You can use the encoder and conditioner directly without the plugin system:
 
 ```python
 import torch
-from fsd3d.encoder import ViTEncoder, LinearDomainAdapter
-from fsd3d.conditioner import Conditioner, ContextNormalizer
+from fsd3d.encoder import ViTEncoder
+from fsd3d.data_bridge import LinearVisualAdapter, ContextNormalizer
+from fsd3d.conditioner import Conditioner
 
 # §1: Encode video frames
-encoder = ViTEncoder()          # (B, 12, 224, 224) → (B, 196, 128)
-adapter = LinearDomainAdapter() # (B, 196, 128) → (B, 196, 128)
+encoder = ViTEncoder()            # (B, 12, 224, 224) → (B, 196, 128)
+adapter = LinearVisualAdapter()   # (B, 196, 128) → (B, 196, 128)
 
 images = torch.randn(1, 12, 224, 224)  # 4 stacked RGB frames
 visual_tokens = encoder(images)          # (1, 196, 128)
@@ -178,7 +193,7 @@ waypoints = torch.randn(1, 16, 3) # 16 A* waypoints (x, y, z)
 conditioning_tokens = conditioner(telemetry, waypoints)
 # → (1, 17, 128) — 1 telem + 16 path
 
-# §3: Normalize to fixed-length context
+# §3: Normalize to fixed-length context (from data_bridge)
 normalizer = ContextNormalizer()
 context = normalizer(adapted_tokens, conditioning_tokens)
 # → (1, 32, 128) — ready for §4 decoder
@@ -218,7 +233,7 @@ Under the hood, `ThreeDGSPlugin.build_context()` runs:
 4. **`TelemetryFaker`** — simulates GPS/IMU/barometer/orientation noise
 5. **`SceneRenderer`** — renders RGB frames along the path via gsplat
 6. **`ViTEncoder`** (§1) — frames → visual tokens `(1, 196, 128)`
-7. **`LinearDomainAdapter`** — adapts visual tokens for domain shift
+7. **`LinearVisualAdapter`** (§3) — adapts visual tokens for domain shift
 8. **`Conditioner`** (§2) — telemetry + waypoints → conditioning tokens `(1, 17, 128)`
 9. **`ContextNormalizer`** (§3) — visual + conditioning → context `(1, 32, 128)`
 

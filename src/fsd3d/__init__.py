@@ -20,11 +20,11 @@ from fsd3d.constants import (
     TRAJECTORY_SCALE,
 )
 from fsd3d.encoder.vit_encoder import ViTEncoder
-from fsd3d.encoder.domain_adapter import DomainAdapter, LinearDomainAdapter
+from fsd3d.data_bridge.visual_adapter import VisualAdapter, LinearVisualAdapter
+from fsd3d.data_bridge.context_normalizer import ContextNormalizer
 from fsd3d.conditioner.telemetry_encoder import TelemetryEncoder
 from fsd3d.conditioner.path_encoder import PathEncoder
 from fsd3d.conditioner.conditioner import Conditioner
-from fsd3d.conditioner.normalizer import ContextNormalizer
 from fsd3d.decoder.transformer import FSD3DTransformerDecoder
 from fsd3d.decoder.action_projection import ActionProjection
 from fsd3d.decoder.action_head import ActionHead
@@ -46,14 +46,14 @@ __version__ = "0.1.0"
 __all__ = [
     # §1 Pilot Space
     "ViTEncoder",
-    "DomainAdapter",
-    "LinearDomainAdapter",
+    # §3 Data Bridge
+    "VisualAdapter",
+    "LinearVisualAdapter",
+    "ContextNormalizer",
     # §2 Conditioning
     "TelemetryEncoder",
     "PathEncoder",
     "Conditioner",
-    # §3 Context Normalization
-    "ContextNormalizer",
     # §4 + §5
     "FSD3DTransformerDecoder",
     "ActionProjection",

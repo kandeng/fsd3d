@@ -34,13 +34,15 @@ fsd3d/
         ├── constants.py            # Shared constants (HORIZON, D_MODEL, etc.)
         ├── encoder/                # §1 — Pilot Space
         │   ├── vit_encoder.py      #   ViT encoder: (B,12,224,224) → (B,196,128) visual tokens
-        │   ├── domain_adapter.py   #   DomainAdapter base + LinearDomainAdapter
-        │   └── README.md           #   §1 + §2 documentation, usage, GPU instructions
-        ├── conditioner/            # §2 — Conditioning + §3 — Context Normalization
+        │   └── domain_adapter.py   #   [Shim] Re-exports VisualAdapter as DomainAdapter
+        ├── data_bridge/              # §3 — Data Bridge (Context Normalization)
+        │   ├── visual_adapter.py     #   VisualAdapter base + LinearVisualAdapter
+        │   └── context_normalizer.py #   ContextNormalizer (merge + normalize to 32 tokens)
+        ├── conditioner/              # §2 — Conditioning
         │   ├── telemetry_encoder.py  #   §2 TelemetryEncoder (MLP: 9 → 128)
         │   ├── path_encoder.py       #   §2 PathEncoder (1-layer transformer)
         │   ├── conditioner.py        #   §2 Conditioner (telemetry + path → conditioning tokens)
-        │   └── normalizer.py         #   §3 ContextNormalizer (merge + normalize to 32 tokens)
+        │   └── normalizer.py         #   [Shim] Re-exports ContextNormalizer
         ├── decoder/                # §4 + §5 — Latent Generation + Action Loop
         │   ├── transformer.py      #   §4 FSD3DTransformerDecoder
         │   ├── action_projection.py #   §5 ActionProjection (z_tau → Q)
@@ -73,9 +75,9 @@ fsd3d/
 
 | Architecture Section | Package | Status |
 |---|---|---|
-| §1 Pilot Space | `fsd3d.encoder` | **Implemented** — ViTEncoder + DomainAdapter |
+| §1 Pilot Space | `fsd3d.encoder` | **Implemented** — ViTEncoder |
 | §2 Conditioning | `fsd3d.conditioner` | **Implemented** — TelemetryEncoder + PathEncoder + Conditioner |
-| §3 Context Normalization | `fsd3d.conditioner.normalizer` | **Implemented** — ContextNormalizer |
+| §3 Data Bridge | `fsd3d.data_bridge` | **Implemented** — VisualAdapter + ContextNormalizer |
 | §4 Latent & Flight Generation | `fsd3d.decoder.transformer` | **Implemented** |
 | §5 Action Loop | `fsd3d.decoder.action_projection` + `fsd3d.decoder.action_head` + `fsd3d.decoder.autoregressive` | **Implemented** |
 
@@ -124,10 +126,10 @@ pip install -e ".[dev]"
 
 The decoder (§4 + §5) can be exercised via entry-point scripts in `src/fsd3d/decoder/` — see [decoder/README.md](src/fsd3d/decoder/README.md).
 
-For the full pipeline (§1 encoder → §2 conditioner → §3 normalizer → §4 decoder → §5 action head), see [encoder/README.md](src/fsd3d/encoder/README.md) which documents:
+For the full pipeline (§1 encoder → §3 data bridge → §2 conditioner → §4 decoder → §5 action head), see [encoder/README.md](src/fsd3d/encoder/README.md) which documents:
 - Architecture and data flow for §1, §2, and §3
 - File-to-component mapping with the overall architecture diagram
-- Installation and standalone usage of ViTEncoder, DomainAdapter, Conditioner, and ContextNormalizer
+- Installation and standalone usage of ViTEncoder, VisualAdapter, Conditioner, and ContextNormalizer
 - Complete usage example with `fsd3d-3dgs` (3DGS rendering, A* planning, telemetry simulation)
 - GPU server instructions for rendering, training, and integration tests
 
@@ -164,7 +166,7 @@ Each sub-module that contains tests has its own `README.md` with self-testing in
 | Sub-module | Tests | README |
 |---|---|---|
 | `decoder/` (§4 + §5) | 52 tests — architecture correctness, data profile, CFM & AR pipelines | [decoder/README.md](src/fsd3d/decoder/README.md) |
-| `encoder/` + `conditioner/` (§1 + §2 + §3) | 19 unit tests + 4 GPU integration tests | [encoder/README.md](src/fsd3d/encoder/README.md) |
+| `encoder/` (§1) + `data_bridge/` (§3) + `conditioner/` (§2) | 19 unit tests + 4 GPU integration tests | [encoder/README.md](src/fsd3d/encoder/README.md) |
 | `examples/fsd3d-3dgs/` | 19 unit + 4 PLY integration tests | [test_integration.py](examples/fsd3d-3dgs/tests/test_integration.py) |
 
 Run all tests from the project root:

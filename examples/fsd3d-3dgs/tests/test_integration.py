@@ -185,7 +185,7 @@ class TestAStarPlanner:
 # ===========================================================================
 
 class TestEncoderAndConditioner:
-    """Test ViTEncoder, DomainAdapter, Conditioner, and ContextNormalizer shapes."""
+    """Test ViTEncoder, VisualAdapter, Conditioner, and ContextNormalizer shapes."""
 
     def test_vit_encoder_shape(self):
         """ViTEncoder: (B, 12, 224, 224) → (B, 196, 128)."""
@@ -198,11 +198,11 @@ class TestEncoderAndConditioner:
             tokens = encoder(images)
         assert tokens.shape == (2, NUM_PATCHES, 128)
 
-    def test_linear_domain_adapter(self):
-        """LinearDomainAdapter: (B, T, 128) → (B, T, 128)."""
-        from fsd3d.encoder.domain_adapter import LinearDomainAdapter
+    def test_linear_visual_adapter(self):
+        """LinearVisualAdapter: (B, T, 128) → (B, T, 128)."""
+        from fsd3d.data_bridge.visual_adapter import LinearVisualAdapter
 
-        adapter = LinearDomainAdapter()
+        adapter = LinearVisualAdapter()
         tokens = torch.randn(2, 196, 128)
         out = adapter(tokens)
         assert out.shape == (2, 196, 128)
@@ -220,7 +220,7 @@ class TestEncoderAndConditioner:
 
     def test_context_normalizer_shape(self):
         """§3 ContextNormalizer produces (B, 32, 128) from visual + conditioning."""
-        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.data_bridge.context_normalizer import ContextNormalizer
         from fsd3d.constants import CONTEXT_TOKENS
 
         normalizer = ContextNormalizer()
@@ -232,7 +232,7 @@ class TestEncoderAndConditioner:
 
     def test_context_normalizer_truncation(self):
         """§3 ContextNormalizer truncates when token count > 32."""
-        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.data_bridge.context_normalizer import ContextNormalizer
         from fsd3d.constants import CONTEXT_TOKENS
 
         normalizer = ContextNormalizer()
@@ -245,7 +245,7 @@ class TestEncoderAndConditioner:
 
     def test_context_normalizer_padding(self):
         """§3 ContextNormalizer pads when token count < 32."""
-        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.data_bridge.context_normalizer import ContextNormalizer
         from fsd3d.constants import CONTEXT_TOKENS
 
         normalizer = ContextNormalizer()
@@ -261,13 +261,13 @@ class TestEncoderAndConditioner:
     def test_full_encoder_conditioner_normalizer_pipeline(self):
         """Full pipeline: §1 encoder + §2 conditioner + §3 normalizer → (B, 32, 128)."""
         from fsd3d.encoder.vit_encoder import ViTEncoder
-        from fsd3d.encoder.domain_adapter import LinearDomainAdapter
+        from fsd3d.data_bridge.visual_adapter import LinearVisualAdapter
         from fsd3d.conditioner.conditioner import Conditioner
-        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.data_bridge.context_normalizer import ContextNormalizer
         from fsd3d.constants import CONTEXT_TOKENS
 
         encoder = ViTEncoder()
-        adapter = LinearDomainAdapter()
+        adapter = LinearVisualAdapter()
         conditioner = Conditioner()
         normalizer = ContextNormalizer()
 
@@ -323,17 +323,17 @@ class TestDecoderWithContext:
         assert q_tokens.shape == (2, 16, 128)
 
     def test_decoder_with_full_pipeline(self):
-        """Full pipeline: §1 encoder → §2 conditioner → §3 normalizer → §4 decoder → §5 action_head."""
+        """Full pipeline: §1 encoder → §3 data_bridge → §2 conditioner → §4 decoder → §5 action_head."""
         from fsd3d.encoder.vit_encoder import ViTEncoder
-        from fsd3d.encoder.domain_adapter import LinearDomainAdapter
+        from fsd3d.data_bridge.visual_adapter import LinearVisualAdapter
         from fsd3d.conditioner.conditioner import Conditioner
-        from fsd3d.conditioner.normalizer import ContextNormalizer
+        from fsd3d.data_bridge.context_normalizer import ContextNormalizer
         from fsd3d.decoder.transformer import FSD3DTransformerDecoder
         from fsd3d.decoder.action_head import ActionHead
         from fsd3d.constants import HORIZON, CONTEXT_TOKENS
 
         encoder = ViTEncoder()
-        adapter = LinearDomainAdapter()
+        adapter = LinearVisualAdapter()
         conditioner = Conditioner()
         normalizer = ContextNormalizer()
         decoder = FSD3DTransformerDecoder()

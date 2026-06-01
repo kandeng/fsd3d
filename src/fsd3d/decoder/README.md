@@ -4,7 +4,7 @@ The **decoder** sub-package implements §4 (Latent & Flight Generation) and §5 
 
 ![FSD3D Architecture](../../../image/fsd3d_overall_architecture_02.png)
 
-*Figure: §4 (Latent & Flight Generation) and §5 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2 + §3, and Q from z_tau via §5 Action Projection. It outputs a clean flight plan z₁, which the §5 Action Head projects to a 16×4 trajectory horizon matrix.*
+*Figure: §4 (Latent & Flight Generation) and §5 (Action Loop) are highlighted in the overall FSD3D architecture. The decoder receives context (K, V) from §1 + §2 + §3 Data Bridge, and Q from z_tau via §5 Action Projection. It outputs a clean flight plan z₁, which the §5 Action Head projects to a 16×4 trajectory horizon matrix.*
 
 The expert trajectories are **bimodal Y-shaped paths**: the drone flies straight up a corridor, then dodges either left or right around a circular pillar, and continues straight up. With multimodal training data, the AR model averages both modes (x≈0) and flies straight into the pillar (collision), while the CFM model resolves a single clean trajectory that correctly dodges around the pillar.
 
@@ -236,6 +236,6 @@ The `AutoregressiveWrapper` chains §4 + §5 and adds:
 |---|---|---|---|---|
 | **§1 Pilot Space** | 2D Video → ViT → 3D Tokens | `ContextAssembler` — static `(1, 32, 128)` Xavier tensor | Not trained | Used as **K, V** memory bank |
 | **§2 Conditioning** | Telemetry + A* → Conditioning Tokens | Same `context` tensor | Not trained | Used as **K, V** memory bank |
-| **§3 Context Normalization** | Merge + Normalize to 32 Tokens | Same `context` tensor | Not trained | Used as **K, V** memory bank |
+| **§3 Data Bridge** | VisualAdapter + ContextNormalizer → 32 Tokens | Same `context` tensor | Not trained | Used as **K, V** memory bank |
 | **§4 Latent & Flight Gen** | z0 → Cross-Attn → Decoder → CFM ODE → z1 | `FSD3DTransformerDecoder` | **Trained here** | ODE integration (CFM) or roll-out (AR) |
 | **§5 Action Loop** | Action Projection → Action Head D → Trajectory | `ActionProjection` (Linear 2→128) + `ActionHead` (Linear 128→2) + `denormalize_trajectory()` | Trained jointly with §4 | Projects z_tau → Q, then latent → action-space positions |
