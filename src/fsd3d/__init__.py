@@ -6,7 +6,7 @@ against Autoregressive MSE on trajectory generation tasks.
 Architecture sections:
     §1 encoder/     — Pilot Space: ViT encoder → 3D spatial latent tokens
     §2 conditioner/  — Conditioning: telemetry + A* guidance → conditioning vector
-    §3 conditioner/  — Context Normalization: merge + normalize to 32 tokens
+    §3 data_bridge/  — Data Bridge: VisualAdapter + ContextNormalizer → (B, 32, 128) context
     §4 decoder/      — Latent & Flight Generation: FSD3DTransformerDecoder
     §5 decoder/      — Action Loop: ActionProjection + ActionHead + AutoregressiveWrapper
 """
